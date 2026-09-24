@@ -1,0 +1,45 @@
+node_modules/
+dist/
+.next/
+build/
+out/
+
+# ─── SECURITY: Block ALL .env files at every depth ───────────────
+# IMPORTANT: Neon DB, Upstash Redis, and Gemini API keys are confirmed
+# live credentials. Rotate immediately before pushing to any remote:
+#   - DATABASE_URL: Neon console → Reset password
+#   - REDIS_URL: Upstash console → Rotate token
+#   - GEMINI_API_KEY: Google AI Studio → Revoke & regenerate
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage
+coverage/
+
+# Prisma
+# (Migrations are intentionally kept in VCS - Prisma manages them)
+
+# Docker
+.dockerignore

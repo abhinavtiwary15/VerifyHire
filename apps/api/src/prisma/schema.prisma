@@ -1,0 +1,260 @@
+// apps/api/src/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  SMB
+  GROWTH
+  ENTERPRISE
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  RECRUITER
+  VIEWER
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CandidateStatus {
+  PENDING
+  ANALYZING
+  COMPLETE
+  FLAGGED
+  CLEARED
+}
+
+enum FlagType {
+  AI_GENERATED_RESUME
+  IDENTITY_MISMATCH
+  WORK_HISTORY_UNVERIFIABLE
+  PROXY_INTERVIEW_SUSPECTED
+  DEEPFAKE_DETECTED
+  BEHAVIORAL_ANOMALY
+  LOCATION_SPOOFING
+  VOICE_CLONE_SUSPECTED
+  DUPLICATE_IDENTITY
+  SOCIAL_PROFILE_MISSING
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SessionStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  FLAGGED
+}
+
+enum AlertType {
+  DEEPFAKE_FACE
+  VOICE_CLONE
+  EARPIECE_DETECTED
+  MULTIPLE_VOICES
+  AI_SCRIPTED_ANSWER
+  EYE_MOVEMENT_ANOMALY
+  IDENTITY_SWITCH
+  SCREEN_SHARE_CHEAT
+}
+
+model Organization {
+  id              String      @id @default(cuid())
+  name            String
+  plan            Plan        @default(SMB)
+  apiKey          String      @unique @default(cuid())
+  apiKeyHash      String?
+  screeningsUsed  Int         @default(0)
+  screeningLimit  Int         @default(10)
+  stripeCustomerId String?
+  stripeSubId      String?
+  webhookUrl      String?
+  webhookSecret   String?
+  createdAt       DateTime    @default(now())
+  jobs            Job[]
+  candidates      Candidate[]
+  users           User[]
+  auditLogs       AuditLog[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String
+  role           Role         @default(RECRUITER)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  lastLoginAt    DateTime?
+  auditLogs      AuditLog[]
+}
+
+model Job {
+  id             String       @id @default(cuid())
+  title          String
+  description    String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  candidates     Candidate[]
+  createdAt      DateTime     @default(now())
+  isActive       Boolean      @default(true)
+}
+
+model Candidate {
+  id                String            @id @default(cuid())
+  name              String
+  email             String
+  phone             String?
+  resumeUrl         String?
+  resumeText        String?           @db.Text
+  linkedinUrl       String?
+  githubUrl         String?
+  organizationId    String
+  organization      Organization      @relation(fields: [organizationId], references: [id])
+  jobId             String?
+  job               Job?              @relation(fields: [jobId], references: [id])
+  authenticityScore Float?
+  riskLevel         RiskLevel?
+  fraudFlags        FraudFlag[]
+  resumeAnalysis    ResumeAnalysis?
+  identityAnalysis  IdentityAnalysis?
+  interviewSessions InterviewSession[]
+  status            CandidateStatus   @default(PENDING)
+  submissionIp      String?
+  deviceFingerprint String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+}
+
+model FraudFlag {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  type        FlagType
+  severity    Severity
+  description String
+  evidence    Json?
+  disputed    Boolean   @default(false)
+  disputeNote String?
+  createdAt   DateTime  @default(now())
+}
+
+model ResumeAnalysis {
+  id                 String    @id @default(cuid())
+  candidateId        String    @unique
+  candidate          Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  aiGeneratedScore   Float
+  perplexityScore    Float
+  burstinessScore    Float
+  stylometricScore   Float
+  workHistoryScore   Float
+  linkedinMatch      Float?
+  githubMatch        Float?
+  publicRecordsMatch Float?
+  rawSignals         Json
+  analyzedAt         DateTime  @default(now())
+}
+
+model IdentityAnalysis {
+  id                 String    @id @default(cuid())
+  candidateId        String    @unique
+  candidate          Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  identityVerified   Boolean   @default(false)
+  faceMatchScore     Float?
+  locationConsistent Boolean?
+  vpnDetected        Boolean   @default(false)
+  deviceFingerprint  String?
+  submissionIp       String?
+  ipReputation       String?
+  ipCountry          String?
+  claimedCountry     String?
+  analyzedAt         DateTime  @default(now())
+}
+
+model InterviewSession {
+  id                    String        @id @default(cuid())
+  candidateId           String
+  candidate             Candidate     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  sessionToken          String        @unique @default(cuid())
+  platform              String?
+  startedAt             DateTime?
+  endedAt               DateTime?
+  eyeMovementScore      Float?
+  voiceConsistencyScore Float?
+  microExpressionScore  Float?
+  responseLatencyScore  Float?
+  identityDriftScore    Float?
+  aiAssistedAnswerScore Float?
+  liveAlerts            LiveAlert[]
+  recordingUrl          String?
+  status                SessionStatus @default(PENDING)
+  createdAt             DateTime      @default(now())
+}
+
+model LiveAlert {
+  id            String           @id @default(cuid())
+  sessionId     String
+  session       InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  alertType     AlertType
+  confidence    Float
+  timestamp     DateTime         @default(now())
+  description   String
+  frameSnapshot String?
+}
+
+model FraudDatabase {
+  id               String   @id @default(cuid())
+  emailHash        String?  @unique
+  phoneHash        String?
+  deviceHash       String?
+  ipHash           String?
+  resumeHash       String?
+  flagCount        Int      @default(1)
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @updatedAt
+  sharedAcrossOrgs Boolean  @default(true)
+  sourceOrgCount   Int      @default(1)
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id])
+  action         String
+  entityType     String?
+  entityId       String?
+  metadata       Json?
+  ip             String?
+  createdAt      DateTime     @default(now())
+}
+
+model Job_Queue {
+  id          String   @id @default(cuid())
+  type        String
+  payload     Json
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  result      Json?
+  error       String?
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+}
