@@ -2,9 +2,6 @@
 
 An AI-powered platform that helps hiring teams detect resume fraud, identity spoofing, and interview cheating. Built as a Next.js + Fastify + Python monorepo.
 
-> [!CAUTION]
-> **Rotate credentials immediately.** The Gemini API key in `.env` has been exposed and is invalid. Generate a new one at [Google AI Studio](https://aistudio.google.com/app/apikey). Neon DB and Upstash Redis credentials should also be rotated before any VCS push.
-
 ---
 
 ## What Actually Works (Post-Fix)
@@ -59,6 +56,8 @@ npm install
 ```
 
 ### 2. Set up environment
+
+Development credentials used during this project's build were rotated after the initial commit. See `.env.example` for the required environment variables — no real values are included.
 
 ```bash
 cp .env.example .env
@@ -194,15 +193,15 @@ npm test --workspace=apps/api
 
 ## Security Notes
 
-### Credential Rotation (Do This Now)
+### Environment Secrets Management
 
-| Credential | Location | How to rotate |
+| Secret | Purpose | Management & Generation |
 |---|---|---|
-| `GEMINI_API_KEY` | `.env` line 3 | [Google AI Studio](https://aistudio.google.com/app/apikey) → Revoke → New key |
-| `DATABASE_URL` | `.env` line 1 | Neon console → Reset password |
-| `REDIS_URL` | `.env` line 2 | Upstash console → Rotate token |
-| `JWT_SECRET` | `.env` line 6 | `openssl rand -hex 64` — invalidates all active sessions |
-| `FRAUD_HASH_SALT` | `.env` | **Do not rotate** after initial deployment — invalidates all fraud hashes |
+| `GEMINI_API_KEY` | Resume & interview frame analysis | [Google AI Studio](https://aistudio.google.com/app/apikey) |
+| `DATABASE_URL` | PostgreSQL connection | Neon or local PostgreSQL instance |
+| `REDIS_URL` | Background task queue & pub/sub | Upstash or local Redis instance |
+| `JWT_SECRET` | API authentication tokens | Generate via `openssl rand -hex 64` |
+| `FRAUD_HASH_SALT` | Cross-tenant HMAC hashing salt | Generate via `openssl rand -hex 32` (persistent per deployment) |
 
 ### Privacy Architecture
 
