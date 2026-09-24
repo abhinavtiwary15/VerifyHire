@@ -33,8 +33,6 @@ export default function InterviewPage() {
   const streamRef         = useRef<MediaStream | null>(null)
   const sessionTimerRef   = useRef<NodeJS.Timeout | null>(null)
   const analysisIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const waveTimerRef      = useRef<NodeJS.Timeout | null>(null)
-
   const [active, setActive]           = useState(false)
   const [alerts, setAlerts]           = useState<LiveAlert[]>([])
   const [duration, setDuration]       = useState(0)
@@ -43,7 +41,6 @@ export default function InterviewPage() {
   const [riskLevel, setRiskLevel]     = useState<string|null>(null)
   const [analyzing, setAnalyzing]     = useState(false)
   const [cameraOk, setCameraOk]       = useState(false)
-  const [waveBars, setWaveBars]       = useState<number[]>(Array(32).fill(4))
   const [aiQuestions, setAiQuestions] = useState<string[]>([
     'Why did you leave your previous role?',
     'Describe your daily workflow at your last company.',
@@ -151,11 +148,6 @@ export default function InterviewPage() {
     setLastAnalysis(null)
     setAnalysisError(null)
 
-    // Waveform animation (decorative)
-    waveTimerRef.current = setInterval(() => {
-      setWaveBars(Array(32).fill(0).map(() => 3 + Math.random() * 24))
-    }, 140)
-
     // Session timer
     sessionTimerRef.current = setInterval(() => setDuration(d => d + 1), 1000)
 
@@ -180,13 +172,11 @@ export default function InterviewPage() {
 
   function stopSession() {
     setActive(false)
-    if (waveTimerRef.current) clearInterval(waveTimerRef.current)
     if (sessionTimerRef.current) clearInterval(sessionTimerRef.current)
     if (analysisIntervalRef.current) clearInterval(analysisIntervalRef.current)
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null }
     if (videoRef.current)  { videoRef.current.srcObject = null }
     setCameraOk(false)
-    setWaveBars(Array(32).fill(4))
     setAnalyzing(false)
   }
 
@@ -337,19 +327,15 @@ export default function InterviewPage() {
               </div>
             )}
 
-            {/* Voice waveform (decorative) */}
-            <div>
-              <div className="flex items-center justify-between text-xs text-zinc-500 mb-1.5">
-                <span>Voice Waveform</span>
-                <span className="text-zinc-600">{active ? 'Monitoring' : '—'}</span>
+            {/* Real-time Vision Monitoring Status */}
+            <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-lg p-3 text-xs">
+              <div className="flex items-center justify-between text-zinc-400 mb-1">
+                <span className="font-medium text-zinc-300">Visual Integrity Pipeline</span>
+                <span className="text-[10px] text-zinc-500 font-mono">{active ? 'Cadence: 8s' : 'Idle'}</span>
               </div>
-              <div className="flex items-end gap-0.5 h-8 bg-zinc-900 rounded-lg px-2 py-1">
-                {waveBars.map((h, i) => (
-                  <div key={i} className="flex-1 rounded-sm transition-all duration-75"
-                    style={{ height: `${active ? h : 4}px`, background: active ? '#6366f1' : '#27272a' }} />
-                ))}
+              <div className="text-[11px] text-zinc-500 leading-relaxed">
+                Captures keyframes at fixed intervals via HTML5 Canvas. Analyzed by Gemini 1.5 Flash Vision for observable visual anomalies (multi-person, presence, alignment).
               </div>
-              <div className="text-[10px] text-zinc-600 mt-1">Waveform is decorative. Voice biometrics require AssemblyAI integration (not included).</div>
             </div>
           </div>
 

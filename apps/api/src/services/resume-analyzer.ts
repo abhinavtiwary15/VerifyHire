@@ -144,10 +144,41 @@ async function verifyWorkHistory(resumeText: string, linkedinUrl?: string | null
 }
 
 async function checkLinkedInProfile(url: string, name: string): Promise<number> {
-  // In production: use Proxycurl API
-  // Scoring heuristic based on URL age / completeness
-  if (url.includes('linkedin.com/in/')) return 60
-  return 20
+  const match = url.match(/linkedin\.com\/in\/([a-zA-Z0-9\-_%]{3,100})/i)
+  if (!match) return 0
+
+  let score = 30 // Valid public profile format
+
+  const slug = decodeURIComponent(match[1]).toLowerCase()
+  const nameParts = name.toLowerCase().split(/\s+/).filter((part) => part.length >= 2)
+
+  // Verify candidate name tokens in the vanity URL slug
+  const matchingParts = nameParts.filter((part) => slug.includes(part))
+  if (matchingParts.length >= 2 || (nameParts.length === 1 && matchingParts.length === 1)) {
+    score += 40 // High confidence: first and last name present in slug
+  } else if (matchingParts.length === 1) {
+    score += 20 // Moderate confidence: single name token matched
+  }
+
+  // HTTP route reachability probe
+  try {
+    const targetUrl = url.startsWith('http') ? url : `https://${url}`
+    const res = await axios.head(targetUrl, {
+      timeout: 4000,
+      validateStatus: (status) => status < 500, // LinkedIn returns 200, 301, or 999 for existing routes
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    })
+    if (res.status === 404) {
+      return 0 // Confirmed non-existent profile
+    }
+    score += 30
+  } catch {
+    score += 15 // Network timeout fallback: keep format + name points
+  }
+
+  return Math.min(100, score)
 }
 
 async function checkGitHubProfile(url: string): Promise<number> {

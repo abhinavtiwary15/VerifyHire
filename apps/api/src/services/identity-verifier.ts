@@ -102,9 +102,14 @@ async function checkSocialPresence(
   let score = 0
 
   if (linkedinUrl) {
-    // In production: Proxycurl API call
-    score += 25
-    // Would check: profile age, connection count, activity
+    const match = linkedinUrl.match(/linkedin\.com\/in\/([a-zA-Z0-9\-_%]{3,100})/i)
+    if (match) {
+      score += 15 // Valid profile URL structure
+      const slug = decodeURIComponent(match[1]).toLowerCase()
+      const nameParts = name.toLowerCase().split(/\s+/).filter((part) => part.length >= 2)
+      const matchingParts = nameParts.filter((part) => slug.includes(part))
+      if (matchingParts.length > 0) score += 10 // Name alignment with profile slug
+    }
   }
 
   if (githubUrl) {

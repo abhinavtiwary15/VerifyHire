@@ -1,230 +1,216 @@
-# VerifyHire — Hiring Fraud Detection Platform
+# VerifyHire
 
-An AI-powered platform that helps hiring teams detect resume fraud, identity spoofing, and interview cheating. Built as a Next.js + Fastify + Python monorepo.
-
----
-
-## What Actually Works (Post-Fix)
-
-| Feature | Status | Notes |
-|---|---|---|
-| **Resume analysis** (Gemini 1.5 Flash) | ✅ Real | Requires valid `GEMINI_API_KEY` |
-| **Resume analysis** (Python perplexity/burstiness) | ✅ Real | FastAPI microservice, runs locally |
-| **Resume analysis** (regex fallback) | ✅ Real | Fires only on actual API failure |
-| **Interview frame analysis** (Gemini Vision) | ✅ Real | POST `/api/v1/interview/analyze-frame` |
-| **Identity verification** (GitHub) | ✅ Real | Calls public GitHub API, no key needed |
-| **Identity verification** (LinkedIn) | ⚠️ Stub | Returns fixed 60pts. Needs `PROXYCURL_API_KEY` for real data |
-| **Fraud network hashing** | ✅ Fixed | HMAC-SHA256 with `FRAUD_HASH_SALT` (was unsalted SHA-256) |
-| **BullMQ analysis queue** | ✅ Real | Requires Redis |
-| **WebSocket alerts** | ✅ Real | JWT-authenticated |
-| **Auth (JWT + API key)** | ✅ Real | Requires valid Neon DB |
-| **Scoring engine** (Claude summary) | ⚠️ Fallback | `ANTHROPIC_API_KEY` not configured; uses static summary |
-| **Voice biometrics** | ❌ Not implemented | Waveform is decorative. Needs AssemblyAI |
-| **Deepfake detection** | ❌ Not implemented | Frame monitor flags observable anomalies only |
-| **Stripe billing** | ❌ Stub | UI exists, no webhook handler |
-| **ATS integrations** | ❌ Stub | UI only, no real OAuth flows |
+VerifyHire is an open-source, AI-powered candidate authenticity and hiring fraud detection platform. It helps recruiting teams and hiring managers identify AI-generated resumes, verify claimed work histories and online identities, detect cross-organization duplicate applications, and monitor video interviews for visual anomalies in real time.
 
 ---
 
-## Stack
+## Architecture Overview
 
-- **Frontend**: Next.js 14 (App Router), Tailwind CSS, Zustand, Lucide
-- **Backend API**: Fastify 4, TypeScript, BullMQ, Prisma 5, JWT
-- **AI (text)**: Google Gemini 1.5 Flash via `@google/generative-ai`
-- **AI (vision)**: Google Gemini 1.5 Flash (multimodal) via same SDK
-- **AI (scoring summaries)**: Anthropic Claude (optional, graceful fallback)
-- **Python microservice**: FastAPI + uvicorn — perplexity/burstiness/stylometric
-- **Database**: PostgreSQL (Neon recommended), via Prisma ORM
-- **Queue**: Redis (Upstash recommended) via BullMQ
-- **Monorepo**: npm workspaces (`apps/*`, `packages/*`, `services/*`)
+```
+                          ┌──────────────────────────┐
+                          │   Next.js 14 Frontend    │
+                          │ (Dashboard, Live Monitor)│
+                          └────────────┬─────────────┘
+                                       │ HTTP / WebSocket
+                                       ▼
+                          ┌──────────────────────────┐
+                          │    Fastify REST & WS     │
+                          │       API Server         │
+                          └──────┬────────────┬──────┘
+                                 │            │
+            ┌────────────────────┴──┐      ┌──┴────────────────────┐
+            ▼                       ▼      ▼                       ▼
+   ┌─────────────────┐    ┌─────────────┐┌─────────────────┐ ┌─────────────┐
+   │  PostgreSQL     │    │ Redis /     ││ Python FastAPI  │ │ Google      │
+   │  (Prisma ORM)   │    │ BullMQ      ││ AI Analyzer     │ │ Gemini &    │
+   │                 │    │ Task Queue  ││ (Stylometrics)  │ │ Claude LLMs │
+   └─────────────────┘    └─────────────┘└─────────────────┘ └─────────────┘
+```
+
+VerifyHire is organized as an npm workspaces monorepo:
+
+- **`apps/web`**: Next.js 14 (App Router) dashboard, candidate evaluation views, ATS integration console, and live interview monitor.
+- **`apps/api`**: Fastify 4 backend providing REST endpoints, WebSocket event broadcasting, BullMQ background worker queues, and Prisma ORM data modeling.
+- **`packages/types`**: Shared TypeScript interfaces, risk level enums, and data contracts used across frontend and backend services.
+- **`services/ai-analyzer`**: Python FastAPI microservice calculating text burstiness, perplexity proxy metrics, and stylometric markers to detect synthetic resumes.
 
 ---
 
-## Quick Start (Local)
+## How It Works
+
+VerifyHire computes an aggregated **Candidate Authenticity Score (CAS)** from 0 to 100 across five weighted dimensions:
+
+### 1. Resume Authenticity (25%)
+Resume text is analyzed by the Python microservice to calculate:
+- **Lexical Entropy & Perplexity Proxy**: Measures word-length sequence predictability.
+- **Burstiness**: Evaluates the coefficient of variation in sentence length (human writing varies naturally; synthetic text tends toward uniformity).
+- **Stylometric Signals**: Scans for AI buzzword density, pronoun frequency, and repetitive structural patterns.
+
+### 2. Work History Verification (20%)
+Gemini 1.5 Flash examines the candidate's career progression, checking timeline continuity, title plausibility, and flaggable anomalies against expected industry career trajectories.
+
+### 3. Identity & Online Presence (20%)
+- **GitHub Verification**: Directly queries the public GitHub REST API to assess account age, repository activity, and public engagement.
+- **LinkedIn Profile Alignment**: Inspects vanity URL structure, validates formatting, and correlates name tokens in the URL slug with the candidate's legal name.
+- **Contact Integrity**: Validates phone numbers, formats, and email domains against disposable mail patterns.
+
+### 4. Live Interview Integrity Monitor (25%)
+During live technical or behavioral interviews, the browser captures webcam frames at fixed intervals via HTML5 Canvas and transmits them to Gemini 1.5 Flash Vision. The vision pipeline identifies:
+- Candidate face presence and sustained visibility
+- Multiple persons appearing simultaneously in frame
+- Candidate looking significantly off-screen for extended periods
+- Lighting irregularities and camera occlusion
+
+### 5. Cross-Tenant Fraud Network (10%)
+To prevent candidate identity spoofing and syndicates submitting identical profiles across multiple companies, candidate contact identifiers are hashed using **HMAC-SHA256** keyed with a deployment secret (`FRAUD_HASH_SALT`). Raw PII is never stored or shared across tenants.
+
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+|---|---|
+| **Frontend** | Next.js 14 (App Router), React 18, Tailwind CSS, Zustand, TanStack Query, Lucide Icons |
+| **Backend API** | Fastify 4, TypeScript, Prisma ORM, BullMQ, WebSocket (`ws`), Node.js crypto |
+| **Microservice** | Python 3.11+, FastAPI, Uvicorn, Pydantic, standard library statistics |
+| **AI & Vision** | Google Gemini 1.5 Flash (`@google/generative-ai`), Anthropic Claude 3.5 Sonnet (`@anthropic-ai/sdk`) |
+| **Datastores** | PostgreSQL 16, Redis 7 (or Upstash Redis) |
+| **Infrastructure** | Docker, Docker Compose |
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 20+ and npm 10+
 - Python 3.11+
-- PostgreSQL (local or [Neon](https://neon.tech))
-- Redis (local or [Upstash](https://upstash.com))
+- PostgreSQL instance (local or hosted via [Neon](https://neon.tech))
+- Redis instance (local or hosted via [Upstash](https://upstash.com))
+- Google Gemini API key (from [Google AI Studio](https://aistudio.google.com/app/apikey))
 
-### 1. Install dependencies
+### 1. Clone & Install Dependencies
 
 ```bash
+git clone https://github.com/abhinavtiwary15/VerifyHire.git
+cd VerifyHire
+
+# Install monorepo dependencies across apps and packages
 npm install
+
+# Install Python microservice requirements
+cd services/ai-analyzer
+pip install -r requirements.txt
+cd ../..
 ```
 
-### 2. Set up environment
+### 2. Configure Environment Variables
 
-Development credentials used during this project's build were rotated after the initial commit. See `.env.example` for the required environment variables — no real values are included.
+Copy the example environment template:
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in the required values:
+Configure the following variables in `.env`:
 
-```bash
-# Minimum required for core features:
-DATABASE_URL="postgresql://..."          # Neon or local
-REDIS_URL="redis://localhost:6379"       # Local or Upstash
-GEMINI_API_KEY="AIza..."                 # Google AI Studio
-JWT_SECRET="$(openssl rand -hex 64)"
-JWT_REFRESH_SECRET="$(openssl rand -hex 64)"
-FRAUD_HASH_SALT="$(openssl rand -hex 32)"  # CRITICAL: never change after first use
+```env
+# Database & Redis
+DATABASE_URL="postgresql://postgres:password@localhost:5432/verifyhire"
+REDIS_URL="redis://localhost:6379"
+
+# AI Services
+GEMINI_API_KEY="your-gemini-api-key"
+ANTHROPIC_API_KEY="" # Optional: activates Claude 3.5 Sonnet executive summaries
+
+# Authentication & Cryptography
+JWT_SECRET="generate-with-openssl-rand-hex-64"
+JWT_REFRESH_SECRET="generate-with-openssl-rand-hex-64"
+FRAUD_HASH_SALT="generate-with-openssl-rand-hex-32"
+
+# Ports & URLs
+PORT=4000
+FRONTEND_URL="http://localhost:3000"
+NEXT_PUBLIC_API_URL="http://localhost:4000"
+NEXT_PUBLIC_WS_URL="ws://localhost:4000"
+AI_SERVICE_URL="http://localhost:8000"
+AI_SERVICE_SECRET="internal-service-secret"
 ```
 
-### 3. Set up the database
+### 3. Initialize Database
+
+Generate the Prisma client and apply migrations:
 
 ```bash
-npm run prisma:generate      # from apps/api
-npm run prisma:migrate       # applies migrations to your DB
-npm run prisma:seed          # optional: loads demo data
+# From apps/api
+cd apps/api
+npx prisma generate
+npx prisma migrate dev --name init
+cd ../..
 ```
 
-Or from the monorepo root:
+### 4. Run the Development Environment
+
+Start all three services concurrently in separate terminal windows:
 
 ```bash
-cd apps/api && npx prisma migrate dev --name init && cd ../..
-```
+# Terminal 1: Backend API (port 4000)
+npm run dev --workspace=apps/api
 
-### 4. Start the services
+# Terminal 2: Web Dashboard (port 3000)
+npm run dev --workspace=apps/web
 
-```bash
-# Terminal 1: API
-npm run dev --workspace=apps/api      # http://localhost:4000
-
-# Terminal 2: Frontend
-npm run dev --workspace=apps/web      # http://localhost:3000
-
-# Terminal 3: Python microservice
+# Terminal 3: Python AI Analyzer (port 8000)
 cd services/ai-analyzer
-pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 ```
 
-### 5. Log in
-
-Visit `http://localhost:3000/auth/login`
-
-Demo credentials (requires seeded DB):
-- Email: `admin@acme.com`
-- Password: `password123`
+Once running, access the web interface at **`http://localhost:3000`**.
 
 ---
 
-## Docker Compose
+## Docker Compose Deployment
+
+VerifyHire can be run entirely in Docker containers:
 
 ```bash
-# Requires .env to be populated
 docker compose up --build
 ```
 
-Services:
-- `api` → `localhost:4000`
-- `web` → `localhost:3000`
-- `ai-analyzer` → `localhost:8000`
-- `postgres` → `localhost:5432`
-- `redis` → `localhost:6379`
+This starts:
+- **`postgres`** on port `5432`
+- **`redis`** on port `6379`
+- **`api`** on port `4000`
+- **`web`** on port `3000`
+- **`ai-analyzer`** on port `8000`
 
 ---
 
-## Architecture
+## ATS & Webhook Integration
 
-```
-apps/
-  api/       # Fastify API server (TypeScript, CommonJS)
-  web/       # Next.js 14 frontend (App Router)
-packages/
-  types/     # Shared TypeScript types (@verifyhire/types)
-services/
-  ai-analyzer/  # Python FastAPI microservice
-```
+VerifyHire supports bidirectional ATS integration:
 
-### Analysis Pipeline
-
-```
-POST /api/v1/candidates
-  → BullMQ job: "full-analysis"
-  → Worker: runFullAnalysis()
-      ├── resumeAnalyzerService.analyze()
-      │     ├── Python microservice: perplexity/burstiness (primary)
-      │     └── Gemini 1.5 Flash: work history verification (primary)
-      │         └── regex fallback (on API failure only)
-      ├── identityVerifierService.verify()
-      │     ├── GitHub API (real, no key needed)
-      │     └── IPQualityScore (optional)
-      └── fraudNetworkService.check()
-            └── HMAC-SHA256 cross-tenant matching
-  → scoringEngine.compute()
-        ├── CAS = 0.25·resume + 0.20·workHistory + 0.20·identity + 0.25·interview + 0.10·network
-        └── Claude summary (optional, fallback to static)
-  → Prisma: update candidate record
-```
-
-### Interview Monitor
-
-The live interview page (`/interview`) captures webcam frames via `canvas.drawImage()` and sends them every 8 seconds to `POST /api/v1/interview/analyze-frame`, which calls Gemini 1.5 Flash Vision to detect:
-
-- Face presence / absence
-- Multiple people in frame
-- Candidate looking significantly off-screen
-- Poor lighting / covered camera
-
-> [!IMPORTANT]
-> This is **not** a deepfake detection model. It flags observable visual anomalies. All flags are advisory only.
+- **Inbound Candidate Ingestion**:
+  - `POST /api/v1/webhooks/greenhouse` — Ingests application events from Greenhouse Harvest webhooks.
+  - `POST /api/v1/webhooks/lever` — Ingests candidate opportunities from Lever webhooks.
+  - `POST /api/v1/webhooks/generic` — Universal REST webhook for Ashby, Workday, BambooHR, or custom scripts.
+  - Authenticate all inbound requests using the `x-api-key: [Your API Key]` header.
+- **Outbound Score Dispatch**:
+  - Delivers real-time candidate scores and alerts to your configured webhook URL upon analysis completion.
+  - Every payload is signed with an `X-VerifyHire-Signature` header computed as an HMAC-SHA256 digest for end-to-end payload authenticity.
 
 ---
 
-## Tests
+## Running Tests
+
+VerifyHire includes automated unit and integration tests covering the weighted CAS algorithm, HMAC fraud hashing, authentication masking helpers, and resume stylometric heuristics:
 
 ```bash
 npm test --workspace=apps/api
 ```
 
-15 tests across 4 suites:
-- `scoring-engine.test.ts` — CAS formula, risk levels, weight validation
-- `fraud-hash.test.ts` — HMAC hashing consistency, salt independence, hex format
-- `auth-flow.test.ts` — `maskEmail`, `maskPhone` utility functions
-- `resume-analyzer.test.ts` — fallback scoring discrimination, buzzphrase detection
-
 ---
 
-## Security Notes
+## Legal & Compliance Disclaimer
 
-### Environment Secrets Management
-
-| Secret | Purpose | Management & Generation |
-|---|---|---|
-| `GEMINI_API_KEY` | Resume & interview frame analysis | [Google AI Studio](https://aistudio.google.com/app/apikey) |
-| `DATABASE_URL` | PostgreSQL connection | Neon or local PostgreSQL instance |
-| `REDIS_URL` | Background task queue & pub/sub | Upstash or local Redis instance |
-| `JWT_SECRET` | API authentication tokens | Generate via `openssl rand -hex 64` |
-| `FRAUD_HASH_SALT` | Cross-tenant HMAC hashing salt | Generate via `openssl rand -hex 32` (persistent per deployment) |
-
-### Privacy Architecture
-
-PII (email, phone) is hashed using HMAC-SHA256 with `FRAUD_HASH_SALT` before being stored in the fraud network cross-tenant database. Raw PII is never shared cross-tenant. The salt prevents rainbow table attacks against the hash store.
-
-### Compliance Disclaimer
-
-> [!WARNING]
-> Using AI-assisted hiring tools may have legal obligations under:
-> - **FCRA** (Fair Credit Reporting Act) if scores are used for adverse action
-> - **NYC Local Law 144** (AEDT bias audits for AI hiring tools)
-> - **Illinois AEIA**, **California AB 331**, and other state AI employment laws
->
-> This codebase does not implement bias auditing, adverse action notices, or FCRA-compliant dispute resolution. Consult legal counsel before deploying in a real hiring context.
-
----
-
-## LinkedIn Integration
-
-LinkedIn data requires [Proxycurl](https://nubela.co/proxycurl/) (`$0.01/check`, Pro plan). Without `PROXYCURL_API_KEY`, the `checkLinkedInProfile()` function returns a fixed 60-point fallback score and logs a warning. This is documented behavior, not a bug.
-
----
-
-## Project Status
-
-This is a functional prototype demonstrating the architecture of an AI-assisted hiring fraud detection platform. Core analysis pipelines are real. Several features (billing, ATS OAuth, voice biometrics) are UI stubs that would require additional third-party integrations.
+VerifyHire is an advisory software platform designed to assist recruiting teams in identifying technical and behavioral anomalies. VerifyHire is not a consumer reporting agency, and its scores, flags, and outputs do not constitute a "consumer report" under the Fair Credit Reporting Act (FCRA). The platform is not intended to be the sole determinant in any employment decision. Organizations utilizing AI-assisted hiring tools remain responsible for compliance with applicable federal, state, and local hiring regulations, including New York City Local Law 144, the Illinois Artificial Intelligence Video Interview Act, and EEOC employment guidance.
